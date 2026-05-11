@@ -11,6 +11,7 @@ def sample_articles() -> dict[str, Article]:
             subcategory="人工智能",
             title="通义千问模型提升企业搜索中的多语言推理能力",
             abstract="阿里云发布更强的语言模型能力，可用于检索增强、复杂推理和智能体工作流。",
+            url="https://help.aliyun.com/zh/model-studio/use-qwen-by-calling-api",
             popularity=42,
         ),
         Article(
@@ -19,6 +20,7 @@ def sample_articles() -> dict[str, Article]:
             subcategory="云计算",
             title="向量数据库成为 RAG 系统的标准基础设施",
             abstract="越来越多工程团队使用向量检索、元数据过滤和重排序构建可靠的 AI 应用。",
+            url="https://docs.trychroma.com/",
             popularity=37,
         ),
         Article(
@@ -51,6 +53,7 @@ def sample_articles() -> dict[str, Article]:
             subcategory="推荐系统",
             title="新闻平台测试可解释推荐模型",
             abstract="个性化新闻流正在结合用户历史、语义检索和多样性约束，提升推荐质量。",
+            url="https://learn.microsoft.com/en-us/azure/open-datasets/dataset-microsoft-news",
             popularity=44,
         ),
         Article(

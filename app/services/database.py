@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import secrets
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from app.models import Feedback
 
@@ -124,6 +126,111 @@ class Database:
             for row in rows
         ]
 
+    def record_view(self, user_id: str, news_id: str) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                "INSERT INTO article_views (user_id, news_id, created_at) VALUES (?, ?, ?)",
+                (user_id, news_id, utc_now()),
+            )
+
+    def list_history(self, user_id: str, limit: int = 50) -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT news_id, MAX(created_at) AS viewed_at, COUNT(*) AS view_count
+                FROM article_views
+                WHERE user_id = ?
+                GROUP BY news_id
+                ORDER BY viewed_at DESC
+                LIMIT ?
+                """,
+                (user_id, limit),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def set_favorite(self, user_id: str, news_id: str, favorite: bool) -> bool:
+        with self.connect() as connection:
+            if favorite:
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO favorites (user_id, news_id, created_at)
+                    VALUES (?, ?, ?)
+                    """,
+                    (user_id, news_id, utc_now()),
+                )
+            else:
+                connection.execute("DELETE FROM favorites WHERE user_id = ? AND news_id = ?", (user_id, news_id))
+        return favorite
+
+    def toggle_favorite(self, user_id: str, news_id: str) -> bool:
+        current = self.is_favorite(user_id, news_id)
+        return self.set_favorite(user_id, news_id, favorite=not current)
+
+    def is_favorite(self, user_id: str, news_id: str) -> bool:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT 1 FROM favorites WHERE user_id = ? AND news_id = ?",
+                (user_id, news_id),
+            ).fetchone()
+        return row is not None
+
+    def list_favorites(self, user_id: str, limit: int = 50) -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT news_id, created_at AS favorited_at
+                FROM favorites
+                WHERE user_id = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (user_id, limit),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_cached_ai(self, task: str, cache_key: str) -> str | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT response FROM ai_cache WHERE task = ? AND cache_key = ?",
+                (task, cache_key),
+            ).fetchone()
+        return row["response"] if row else None
+
+    def set_cached_ai(self, task: str, cache_key: str, response: str) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO ai_cache (task, cache_key, response, created_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(task, cache_key) DO UPDATE SET response = excluded.response, created_at = excluded.created_at
+                """,
+                (task, cache_key, response, utc_now()),
+            )
+
+    def record_agent_run(self, user_id: str, query: str, response: dict[str, Any]) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO agent_runs (user_id, query, response_json, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (user_id, query, json.dumps(response, ensure_ascii=False), utc_now()),
+            )
+
+    def list_agent_runs(self, user_id: str, limit: int = 20) -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT query, response_json, created_at
+                FROM agent_runs
+                WHERE user_id = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (user_id, limit),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def _init_schema(self) -> None:
         with self.connect() as connection:
             connection.executescript(
@@ -154,6 +261,36 @@ class Database:
                     category TEXT,
                     created_at TEXT NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS article_views (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL,
+                    news_id TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS favorites (
+                    user_id TEXT NOT NULL,
+                    news_id TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (user_id, news_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS ai_cache (
+                    task TEXT NOT NULL,
+                    cache_key TEXT NOT NULL,
+                    response TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (task, cache_key)
+                );
+
+                CREATE TABLE IF NOT EXISTS agent_runs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL,
+                    query TEXT NOT NULL,
+                    response_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
                 """
             )
 
@@ -163,7 +300,10 @@ class Database:
                 self.create_user(username=username, password="demo123456", display_name=display_name)
             except ValueError:
                 with self.connect() as connection:
-                    connection.execute("UPDATE users SET user_id = ? WHERE username = ?", (username, username))
+                    connection.execute(
+                        "UPDATE users SET user_id = ?, display_name = ? WHERE username = ?",
+                        (username, display_name, username),
+                    )
 
 
 def normalize_username(username: str) -> str:

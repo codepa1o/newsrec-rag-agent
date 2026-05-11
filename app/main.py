@@ -36,10 +36,23 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class FavoriteRequest(BaseModel):
+    favorite: bool | None = None
+
+
+class AskRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=500)
+
+
+class AgentRecommendRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=300)
+    top_k: int = Field(default=5, ge=1, le=20)
+
+
 app = FastAPI(
     title="智能新闻推荐 RAG Agent",
     description="基于 FastAPI、LangGraph、LangChain、ChromaDB 和 DashScope 预留能力的智能新闻推荐系统。",
-    version="0.1.0",
+    version="0.2.0",
 )
 
 
@@ -55,6 +68,10 @@ def current_user(
     return user
 
 
+def not_found(news_id: str) -> HTTPException:
+    return HTTPException(status_code=404, detail=f"未找到新闻：{news_id}")
+
+
 @app.get("/health")
 def health(container: ServiceContainer = Depends(get_container)) -> dict:
     return {
@@ -63,6 +80,7 @@ def health(container: ServiceContainer = Depends(get_container)) -> dict:
         "articles": len(container.store.articles),
         "behaviors": len(container.store.behaviors),
         "use_dashscope": container.settings.use_dashscope,
+        "ai_cache_enabled": container.settings.ai_cache_enabled,
     }
 
 
@@ -108,6 +126,15 @@ def get_my_profile(user: UserRecord = Depends(current_user), container: ServiceC
     return container.recommender.get_profile(user.user_id)
 
 
+@app.get("/me/profile/summary")
+def get_my_profile_summary(
+    user: UserRecord = Depends(current_user),
+    container: ServiceContainer = Depends(get_container),
+) -> dict:
+    profile = container.profile_service.build_profile(user.user_id)
+    return container.llm_service.summarize_profile(profile)
+
+
 @app.get("/me/recommend")
 def recommend_for_me(
     top_k: int = 10,
@@ -120,6 +147,100 @@ def recommend_for_me(
         "top_k": top_k,
         "items": [item.to_dict() for item in recommendations],
     }
+
+
+@app.get("/me/articles/{news_id}")
+def get_my_article_detail(
+    news_id: str,
+    user: UserRecord = Depends(current_user),
+    container: ServiceContainer = Depends(get_container),
+) -> dict:
+    try:
+        return container.article_service.detail_for_user(user.user_id, news_id)
+    except KeyError as exc:
+        raise not_found(news_id) from exc
+
+
+@app.post("/me/articles/{news_id}/view")
+def record_article_view(
+    news_id: str,
+    user: UserRecord = Depends(current_user),
+    container: ServiceContainer = Depends(get_container),
+) -> dict:
+    try:
+        return container.article_service.record_view(user.user_id, news_id)
+    except KeyError as exc:
+        raise not_found(news_id) from exc
+
+
+@app.post("/me/articles/{news_id}/favorite")
+def favorite_article(
+    news_id: str,
+    payload: FavoriteRequest | None = None,
+    user: UserRecord = Depends(current_user),
+    container: ServiceContainer = Depends(get_container),
+) -> dict:
+    try:
+        return container.article_service.set_favorite(
+            user.user_id,
+            news_id,
+            favorite=None if payload is None else payload.favorite,
+        )
+    except KeyError as exc:
+        raise not_found(news_id) from exc
+
+
+@app.get("/me/favorites")
+def get_my_favorites(user: UserRecord = Depends(current_user), container: ServiceContainer = Depends(get_container)) -> dict:
+    return {"items": container.article_service.favorites_for_user(user.user_id)}
+
+
+@app.get("/me/history")
+def get_my_history(user: UserRecord = Depends(current_user), container: ServiceContainer = Depends(get_container)) -> dict:
+    return {"items": container.article_service.history_for_user(user.user_id)}
+
+
+@app.post("/me/articles/{news_id}/summary")
+def summarize_article(
+    news_id: str,
+    user: UserRecord = Depends(current_user),
+    container: ServiceContainer = Depends(get_container),
+) -> dict:
+    try:
+        return container.article_service.summarize(news_id)
+    except KeyError as exc:
+        raise not_found(news_id) from exc
+
+
+@app.post("/me/articles/{news_id}/ask")
+def ask_article(
+    news_id: str,
+    payload: AskRequest,
+    user: UserRecord = Depends(current_user),
+    container: ServiceContainer = Depends(get_container),
+) -> dict:
+    try:
+        return container.article_service.ask(news_id, payload.question)
+    except KeyError as exc:
+        raise not_found(news_id) from exc
+
+
+@app.post("/me/agent/recommend")
+def agent_recommend(
+    payload: AgentRecommendRequest,
+    user: UserRecord = Depends(current_user),
+    container: ServiceContainer = Depends(get_container),
+) -> dict:
+    items = [item.to_dict() for item in container.recommender.search(payload.query, top_k=payload.top_k)]
+    profile = container.profile_service.build_profile(user.user_id)
+    profile_summary = container.llm_service.summarize_profile(profile)["summary"]
+    response = {
+        "query": payload.query,
+        "answer": f"已根据“{payload.query}”为你找到 {len(items)} 篇相关新闻。{profile_summary}",
+        "items": items,
+    }
+    container.database.record_agent_run(user.user_id, payload.query, response)
+    return response
 
 
 @app.get("/users/{user_id}/profile")
@@ -141,7 +262,7 @@ def recommend(user_id: str, top_k: int = 10, container: ServiceContainer = Depen
 def get_article(news_id: str, container: ServiceContainer = Depends(get_container)) -> dict:
     article = container.store.articles.get(news_id)
     if not article:
-        raise HTTPException(status_code=404, detail=f"未找到新闻：{news_id}")
+        raise not_found(news_id)
     return article.to_dict()
 
 
@@ -151,7 +272,7 @@ def record_feedback(payload: FeedbackRequest, container: ServiceContainer = Depe
         raise HTTPException(status_code=400, detail="缺少用户 ID")
     article = container.store.articles.get(payload.news_id)
     if not article:
-        raise HTTPException(status_code=404, detail=f"未找到新闻：{payload.news_id}")
+        raise not_found(payload.news_id)
     feedback = Feedback(
         user_id=payload.user_id,
         news_id=payload.news_id,
@@ -170,7 +291,7 @@ def record_my_feedback(
 ) -> dict:
     article = container.store.articles.get(payload.news_id)
     if not article:
-        raise HTTPException(status_code=404, detail=f"未找到新闻：{payload.news_id}")
+        raise not_found(payload.news_id)
     feedback = Feedback(
         user_id=user.user_id,
         news_id=payload.news_id,

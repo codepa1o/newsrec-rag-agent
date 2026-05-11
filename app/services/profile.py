@@ -1,16 +1,27 @@
 from __future__ import annotations
 
 from collections import Counter
+from typing import TYPE_CHECKING
 
 from app.core.text import top_keywords
 from app.models import Article, Behavior, Feedback, UserProfile
 
+if TYPE_CHECKING:
+    from app.services.database import Database
+
 
 class ProfileService:
-    def __init__(self, articles: dict[str, Article], behaviors: list[Behavior], feedback: list[Feedback] | None = None) -> None:
+    def __init__(
+        self,
+        articles: dict[str, Article],
+        behaviors: list[Behavior],
+        feedback: list[Feedback] | None = None,
+        database: "Database | None" = None,
+    ) -> None:
         self.articles = articles
         self.behaviors = behaviors
         self.feedback = feedback or []
+        self.database = database
 
     def build_profile(self, user_id: str) -> UserProfile:
         clicked_news = self._clicked_news(user_id)
@@ -36,6 +47,21 @@ class ProfileService:
             if article:
                 category_counts[article.category] += 2
                 clicked_texts.append(article.text)
+
+        if self.database:
+            for item in self.database.list_favorites(user_id, limit=50):
+                article = self.articles.get(item["news_id"])
+                if article:
+                    category_counts[article.category] += 2
+                    clicked_texts.append(article.text)
+
+            for item in self.database.list_history(user_id, limit=50):
+                article = self.articles.get(item["news_id"])
+                if article:
+                    category_counts[article.category] += 1
+                    clicked_texts.append(article.text)
+                    if article.news_id not in clicked_news:
+                        clicked_news.append(article.news_id)
 
         return UserProfile(
             user_id=user_id,

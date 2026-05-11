@@ -100,3 +100,10 @@ class Feedback:
     news_id: str
     feedback_type: FeedbackType
     category: str | None = None
+
+
+@dataclass(frozen=True)
+class ArticleInteraction:
+    user_id: str
+    news_id: str
+    created_at: str

@@ -32,6 +32,8 @@ class Settings:
     retrieval_top_k: int = int(os.getenv("RETRIEVAL_TOP_K", "40"))
     use_chroma: bool = os.getenv("USE_CHROMA", "false").lower() == "true"
     use_dashscope: bool = os.getenv("USE_DASHSCOPE", "false").lower() == "true"
+    ai_cache_enabled: bool = os.getenv("AI_CACHE_ENABLED", "true").lower() == "true"
+    ai_timeout_seconds: int = int(os.getenv("AI_TIMEOUT_SECONDS", "30"))
 
 
 def get_settings() -> Settings:
