@@ -451,6 +451,56 @@ class Database:
                 ),
             )
 
+    def record_experiment(
+        self,
+        name: str,
+        strategy: str,
+        parameters: dict[str, Any],
+        metrics: dict[str, Any],
+        sample_count: int = 0,
+    ) -> int:
+        with self.connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO experiments (name, strategy, parameters_json, metrics_json, sample_count, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    name,
+                    strategy,
+                    json.dumps(parameters, ensure_ascii=False),
+                    json.dumps(metrics, ensure_ascii=False),
+                    sample_count,
+                    utc_now(),
+                ),
+            )
+            return int(cursor.lastrowid)
+
+    def list_experiments(self, limit: int = 50) -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, name, strategy, parameters_json, metrics_json, sample_count, created_at
+                FROM experiments
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [experiment_row_to_dict(row) for row in rows]
+
+    def get_experiment(self, experiment_id: int) -> dict[str, Any] | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT id, name, strategy, parameters_json, metrics_json, sample_count, created_at
+                FROM experiments
+                WHERE id = ?
+                """,
+                (experiment_id,),
+            ).fetchone()
+        return experiment_row_to_dict(row) if row else None
+
     def _init_schema(self) -> None:
         with self.connect() as connection:
             connection.executescript(
@@ -579,6 +629,16 @@ class Database:
                     created_at TEXT NOT NULL,
                     FOREIGN KEY (query_id) REFERENCES rag_queries(id)
                 );
+
+                CREATE TABLE IF NOT EXISTS experiments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    strategy TEXT NOT NULL,
+                    parameters_json TEXT NOT NULL,
+                    metrics_json TEXT NOT NULL,
+                    sample_count INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL
+                );
                 """
             )
 
@@ -620,3 +680,15 @@ def row_to_user(row: sqlite3.Row) -> UserRecord:
         display_name=row["display_name"],
         created_at=row["created_at"],
     )
+
+
+def experiment_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "strategy": row["strategy"],
+        "parameters": json.loads(row["parameters_json"] or "{}"),
+        "metrics": json.loads(row["metrics_json"] or "{}"),
+        "sample_count": row["sample_count"],
+        "created_at": row["created_at"],
+    }

@@ -79,6 +79,23 @@ class DailyBriefingRequest(BaseModel):
     top_k: int = Field(default=8, ge=1, le=20)
 
 
+class LTRTrainRequest(BaseModel):
+    max_users: int | None = Field(default=None, ge=1, le=5000)
+    epochs: int = Field(default=90, ge=1, le=500)
+    learning_rate: float = Field(default=0.08, gt=0, le=1)
+
+
+class LTRRecommendRequest(BaseModel):
+    user_id: str = "U100"
+    top_k: int = Field(default=20, ge=1, le=50)
+    hybrid_rag: bool = False
+
+
+class AblationRequest(BaseModel):
+    user_id: str = "U100"
+    top_k: int = Field(default=20, ge=1, le=50)
+
+
 app = FastAPI(
     title="智能新闻推荐 RAG Agent",
     description="面向新闻推荐系统的 Agentic RAG、推荐实验、多 Agent 协作与本地资料库平台。",
@@ -111,6 +128,7 @@ def health(container: ServiceContainer = Depends(get_container)) -> dict:
         "behaviors": len(container.store.behaviors),
         "use_dashscope": container.settings.use_dashscope,
         "ai_cache_enabled": container.settings.ai_cache_enabled,
+        "ltr": container.ltr_service.status(),
     }
 
 
@@ -184,6 +202,18 @@ def recommend_for_me(
     top_k = top_k or container.settings.recommend_top_k
     recommendations = container.recommender.recommend(user_id=user.user_id, top_k=top_k)
     return {"user_id": user.user_id, "top_k": top_k, "items": [item.to_dict() for item in recommendations]}
+
+
+@app.get("/me/recommend/explain/{news_id}")
+def explain_my_recommendation(
+    news_id: str,
+    user: UserRecord = Depends(current_user),
+    container: ServiceContainer = Depends(get_container),
+) -> dict:
+    try:
+        return container.ltr_service.explain(user.user_id, news_id, hybrid_rag=True)
+    except KeyError as exc:
+        raise not_found(f"未找到新闻：{news_id}") from exc
 
 
 @app.post("/me/daily-briefing")
@@ -411,6 +441,18 @@ def compare_recommendations(payload: RecommendCompareRequest, container: Service
     return container.experiment_service.compare(payload.user_id, top_k=payload.top_k, query=payload.query)
 
 
+@app.post("/recommend/ltr")
+def recommend_ltr(payload: LTRRecommendRequest, container: ServiceContainer = Depends(get_container)) -> dict:
+    items = container.ltr_service.recommend(payload.user_id, top_k=payload.top_k, hybrid_rag=payload.hybrid_rag)
+    return {
+        "user_id": payload.user_id,
+        "top_k": payload.top_k,
+        "strategy": "hybrid_ltr_rag" if payload.hybrid_rag else "ltr_rerank",
+        "model_status": container.ltr_service.status(),
+        "items": [item.to_dict() for item in items],
+    }
+
+
 @app.post("/recommend/cold-start")
 def cold_start_recommend(payload: ColdStartRequest, container: ServiceContainer = Depends(get_container)) -> dict:
     return container.experiment_service.cold_start(payload.interest_tags, top_k=payload.top_k)
@@ -420,6 +462,35 @@ def cold_start_recommend(payload: ColdStartRequest, container: ServiceContainer 
 def evaluate_strategies(payload: StrategyEvaluationRequest | None = None, container: ServiceContainer = Depends(get_container)) -> dict:
     k_values = payload.k_values if payload else [5, 10, 20]
     return container.experiment_service.evaluate_strategies(k_values=k_values)
+
+
+@app.post("/evaluate/ablation")
+def evaluate_ablation(payload: AblationRequest, container: ServiceContainer = Depends(get_container)) -> dict:
+    return container.experiment_service.ablation(payload.user_id, top_k=payload.top_k)
+
+
+@app.post("/models/ltr/train")
+def train_ltr_model(payload: LTRTrainRequest | None = None, container: ServiceContainer = Depends(get_container)) -> dict:
+    payload = payload or LTRTrainRequest()
+    return container.ltr_service.train(max_users=payload.max_users, epochs=payload.epochs, learning_rate=payload.learning_rate)
+
+
+@app.get("/models/ltr/status")
+def ltr_model_status(container: ServiceContainer = Depends(get_container)) -> dict:
+    return container.ltr_service.status()
+
+
+@app.get("/experiments")
+def list_experiments(limit: int = 50, container: ServiceContainer = Depends(get_container)) -> dict:
+    return {"items": container.database.list_experiments(limit=limit)}
+
+
+@app.get("/experiments/{experiment_id}")
+def get_experiment(experiment_id: int, container: ServiceContainer = Depends(get_container)) -> dict:
+    experiment = container.database.get_experiment(experiment_id)
+    if not experiment:
+        raise not_found(f"未找到实验：{experiment_id}")
+    return experiment
 
 
 @app.get("/articles/{news_id}/event-cluster")

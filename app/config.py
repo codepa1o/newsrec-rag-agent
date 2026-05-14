@@ -20,6 +20,8 @@ class Settings:
     data_dir: Path = Path(os.getenv("DATA_DIR", "data"))
     database_path: Path = Path(os.getenv("DATABASE_PATH", "data/newsrec.db"))
     upload_dir: Path = Path(os.getenv("UPLOAD_DIR", "data/uploads"))
+    model_dir: Path = Path(os.getenv("MODEL_DIR", "data/models"))
+    ltr_model_path: Path = Path(os.getenv("LTR_MODEL_PATH", "data/models/ltr_model.json"))
     mind_news_path: Path = Path(os.getenv("MIND_NEWS_PATH", "data/sample/news.tsv"))
     mind_behaviors_path: Path = Path(os.getenv("MIND_BEHAVIORS_PATH", "data/sample/behaviors.tsv"))
     chroma_persist_dir: Path = Path(os.getenv("CHROMA_PERSIST_DIR", "data/chroma"))

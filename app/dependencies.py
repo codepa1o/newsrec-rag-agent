@@ -12,6 +12,7 @@ from app.services.evaluator import Evaluator
 from app.services.experiment_service import RecommendationExperimentService
 from app.services.article_service import ArticleService
 from app.services.llm_service import LLMService
+from app.services.ltr_service import LearningToRankService
 from app.services.news_intelligence import NewsIntelligenceService
 from app.services.profile import ProfileService
 from app.services.rag_service import RAGService
@@ -56,11 +57,22 @@ class ServiceContainer:
             rag_service=self.rag_service,
         )
         self.evaluator = Evaluator(self.recommender, self.store.behaviors)
+        self.ltr_service = LearningToRankService(
+            articles=self.store.articles,
+            behaviors=self.store.behaviors,
+            database=self.database,
+            profile_service=self.profile_service,
+            recommender=self.recommender,
+            model_path=settings.ltr_model_path,
+            max_train_users=settings.max_eval_users * 5,
+        )
         self.experiment_service = RecommendationExperimentService(
             articles=self.store.articles,
             behaviors=self.store.behaviors,
+            database=self.database,
             profile_service=self.profile_service,
             recommender=self.recommender,
+            ltr_service=self.ltr_service,
             max_eval_users=settings.max_eval_users,
         )
         self.news_intelligence = NewsIntelligenceService(

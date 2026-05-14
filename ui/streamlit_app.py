@@ -381,6 +381,8 @@ SESSION_DEFAULTS = {
     "last_compare_result": None,
     "last_eval_result": None,
     "last_briefing": None,
+    "last_ablation_result": None,
+    "last_ltr_explain": None,
 }
 
 for key, default in SESSION_DEFAULTS.items():
@@ -612,6 +614,10 @@ def sidebar() -> int:
         "新闻详情",
         "推荐策略对比",
         "实验评估",
+        "模型训练",
+        "实验追踪",
+        "消融分析",
+        "推荐解释",
         "兴趣漂移",
         "新闻事件聚类",
         "AI 新闻日报",
@@ -747,7 +753,7 @@ def show_article_detail() -> None:
         st.write(article.get("abstract") or "暂无摘要。")
         st.markdown(f'<div class="reason-box">{_escape(detail.get("reason", "暂无推荐理由"))}</div>', unsafe_allow_html=True)
 
-        cols = st.columns(6)
+        cols = st.columns(7)
         favorite_label = "取消收藏" if detail.get("favorite") else "收藏新闻"
         if cols[0].button(favorite_label, use_container_width=True):
             api_post(f"/me/articles/{news_id}/favorite", {"favorite": not detail.get("favorite")}, auth=True)
@@ -762,10 +768,12 @@ def show_article_detail() -> None:
             set_page("新闻事件聚类")
         if cols[4].button("资料解读", use_container_width=True):
             st.session_state.last_rag_result = api_post(f"/me/articles/{news_id}/grounded-analysis", {}, auth=True, timeout=90)
+        if cols[5].button("排序解释", use_container_width=True):
+            set_page("推荐解释")
         if article.get("url"):
-            cols[5].link_button("查看原文", article["url"], use_container_width=True)
+            cols[6].link_button("查看原文", article["url"], use_container_width=True)
         else:
-            cols[5].caption("暂无原文")
+            cols[6].caption("暂无原文")
 
     if st.session_state.last_rag_result:
         result = st.session_state.last_rag_result
@@ -848,6 +856,111 @@ def show_strategy_evaluation() -> None:
     for strategy, rows in result.get("results", {}).items():
         with st.expander(rows[0].get("label", strategy) if rows else strategy, expanded=strategy == "agentic_rag"):
             st.table(rows)
+
+
+def show_ltr_training() -> None:
+    show_page_header("Learning to Rank", "模型训练", "基于 MIND 用户行为构造点击样本，训练轻量级 LTR 学习排序模型。")
+    status = api_get("/models/ltr/status")
+    cols = st.columns(4)
+    with cols[0]:
+        metric_card("模型状态", status.get("status", "not_trained"), "trained / fallback / not_trained")
+    with cols[1]:
+        metric_card("训练样本", compact_number(status.get("sample_count", 0)), "正负点击样本")
+    with cols[2]:
+        metric_card("正样本", compact_number(status.get("positive_count", 0)), "clicked impressions")
+    with cols[3]:
+        metric_card("负样本", compact_number(status.get("negative_count", 0)), "unclicked impressions")
+
+    with st.container(border=True):
+        max_users = st.number_input("最大训练用户数", min_value=1, max_value=5000, value=400, step=50)
+        epochs = st.slider("训练轮数", min_value=10, max_value=300, value=90, step=10)
+        learning_rate = st.slider("学习率", min_value=0.01, max_value=0.5, value=0.08, step=0.01)
+        if st.button("训练 LTR 模型", type="primary", use_container_width=True):
+            result = api_post(
+                "/models/ltr/train",
+                {"max_users": int(max_users), "epochs": epochs, "learning_rate": learning_rate},
+                timeout=180,
+            )
+            st.success("模型训练完成")
+            st.json(result)
+
+    with st.container(border=True):
+        st.subheader("特征列表")
+        st.write("、".join(status.get("feature_names", [])))
+        st.caption(f"模型文件：{status.get('model_path', '-')}")
+
+
+def show_experiment_tracking() -> None:
+    show_page_header("Experiment Tracking", "实验追踪", "查看每次离线评估、消融分析的实验记录，方便复现实验结果。")
+    experiments = api_get("/experiments?limit=50").get("items", [])
+    if not experiments:
+        st.info("暂无实验记录。可以先在“实验评估”或“消融分析”页面运行一次实验。")
+        return
+    rows = [
+        {
+            "id": item["id"],
+            "name": item["name"],
+            "strategy": item["strategy"],
+            "sample_count": item["sample_count"],
+            "created_at": item["created_at"],
+        }
+        for item in experiments
+    ]
+    st.table(rows)
+    with st.container(border=True):
+        experiment_id = st.number_input("查看实验详情 ID", min_value=1, value=int(experiments[0]["id"]), step=1)
+        if st.button("加载实验详情", use_container_width=True):
+            st.json(api_get(f"/experiments/{int(experiment_id)}"))
+
+
+def show_ablation() -> None:
+    show_page_header("Ablation", "消融分析", "比较去掉语义、反馈、本地资料 RAG、多样性过滤后的推荐列表变化。")
+    user = st.session_state.user or {}
+    with st.container(border=True):
+        user_id = st.text_input("用户 ID", value=user.get("user_id", DEFAULT_USER))
+        top_k = st.slider("TopK", min_value=5, max_value=50, value=20, step=5)
+        if st.button("运行消融实验", type="primary", use_container_width=True):
+            st.session_state.last_ablation_result = api_post(
+                "/evaluate/ablation",
+                {"user_id": user_id, "top_k": top_k},
+                timeout=120,
+            )
+
+    result = st.session_state.last_ablation_result
+    if not result:
+        st.info("点击按钮后开始运行消融分析。")
+        return
+    for variant in result.get("variants", []):
+        with st.expander(variant.get("label", variant.get("name")), expanded=variant.get("name") == "full_hybrid_ltr_rag"):
+            st.json(variant.get("metrics", {}))
+            for item in variant.get("items", [])[:5]:
+                article_card(item, f"ablation-{variant.get('name')}", show_feedback=False)
+
+
+def show_ltr_explain() -> None:
+    show_page_header("Explainability", "推荐解释", "展示 LTR 模型的特征值、特征权重和排序贡献，解释为什么推荐某篇新闻。")
+    news_id = st.session_state.selected_news_id
+    with st.container(border=True):
+        news_id = st.text_input("新闻 ID", value=news_id, placeholder="从新闻详情页进入，或手动输入新闻 ID")
+        if st.button("生成 LTR 推荐解释", type="primary", use_container_width=True):
+            if not news_id.strip():
+                st.warning("请输入新闻 ID。")
+            else:
+                st.session_state.selected_news_id = news_id
+                st.session_state.last_ltr_explain = api_get(f"/me/recommend/explain/{news_id}", auth=True)
+
+    result = st.session_state.last_ltr_explain
+    if not result:
+        st.info("请选择一篇新闻后生成解释。")
+        return
+    with st.container(border=True):
+        st.subheader(result.get("title", "推荐解释"))
+        st.info(result.get("summary", ""))
+        metric_card("LTR 预测分", result.get("score", "-"), "越高代表模型预测越可能点击")
+    st.subheader("特征贡献")
+    st.table(result.get("contributions", []))
+    with st.expander("原始特征值"):
+        st.json(result.get("features", {}))
 
 
 def show_interest_drift() -> None:
@@ -1062,6 +1175,14 @@ def show_app() -> None:
         show_strategy_compare(top_k)
     elif page == "实验评估":
         show_strategy_evaluation()
+    elif page == "模型训练":
+        show_ltr_training()
+    elif page == "实验追踪":
+        show_experiment_tracking()
+    elif page == "消融分析":
+        show_ablation()
+    elif page == "推荐解释":
+        show_ltr_explain()
     elif page == "兴趣漂移":
         show_interest_drift()
     elif page == "新闻事件聚类":

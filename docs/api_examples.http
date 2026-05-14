@@ -31,6 +31,45 @@ Content-Type: application/json
   "k_values": [5, 10, 20]
 }
 
+### Train LTR model
+POST http://127.0.0.1:8000/models/ltr/train
+Content-Type: application/json
+
+{
+  "max_users": 400,
+  "epochs": 90,
+  "learning_rate": 0.08
+}
+
+### LTR model status
+GET http://127.0.0.1:8000/models/ltr/status
+
+### LTR recommendation
+POST http://127.0.0.1:8000/recommend/ltr
+Content-Type: application/json
+
+{
+  "user_id": "U100",
+  "top_k": 20,
+  "hybrid_rag": true
+}
+
+### Recommendation explanation
+GET http://127.0.0.1:8000/me/recommend/explain/N1006
+Authorization: Bearer {{token}}
+
+### Ablation
+POST http://127.0.0.1:8000/evaluate/ablation
+Content-Type: application/json
+
+{
+  "user_id": "U100",
+  "top_k": 20
+}
+
+### Experiments
+GET http://127.0.0.1:8000/experiments
+
 ### Hybrid RAG query
 POST http://127.0.0.1:8000/me/rag/hybrid-query
 Authorization: Bearer {{token}}
