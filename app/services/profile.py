@@ -63,6 +63,9 @@ class ProfileService:
                     if article.news_id not in clicked_news:
                         clicked_news.append(article.news_id)
 
+            document_chunks = self.database.list_document_chunks(user_id=user_id)
+            clicked_texts.extend(chunk["text"][:500] for chunk in document_chunks[:50])
+
         return UserProfile(
             user_id=user_id,
             preferred_categories=[category for category, _ in category_counts.most_common(5)],

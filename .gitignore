@@ -5,9 +5,11 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.ocr-temp/
 
 data/mind/
 data/chroma/
+data/uploads/
 data/feedback.json
 data/newsrec.db
 data/*.db

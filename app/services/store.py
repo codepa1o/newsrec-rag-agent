@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
+from collections import Counter
 
 from app.config import Settings
 from app.core.mind import load_behaviors, load_news
@@ -16,6 +18,7 @@ class NewsDataStore:
         self.database = database
         self.articles = self._load_articles()
         self.behaviors = self._load_behaviors()
+        self._apply_behavior_popularity()
         self.feedback = self._load_feedback()
 
     def add_feedback(self, feedback: Feedback) -> None:
@@ -27,7 +30,10 @@ class NewsDataStore:
 
     def _load_articles(self) -> dict[str, Article]:
         if self.settings.mind_news_path.exists():
-            return load_news(self.settings.mind_news_path)
+            articles = load_news(self.settings.mind_news_path)
+            for news_id, article in sample_articles().items():
+                articles.setdefault(news_id, article)
+            return articles
         return sample_articles()
 
     def _load_behaviors(self) -> list[Behavior]:
@@ -63,3 +69,14 @@ class NewsDataStore:
 
     def _feedback_path(self) -> Path:
         return self.settings.data_dir / "feedback.json"
+
+    def _apply_behavior_popularity(self) -> None:
+        counts: Counter[str] = Counter()
+        for behavior in self.behaviors:
+            counts.update(news_id for news_id in behavior.history if news_id)
+            for impression in behavior.impressions:
+                counts[impression.news_id] += 3 if impression.clicked else 1
+        for news_id, popularity in counts.items():
+            article = self.articles.get(news_id)
+            if article:
+                self.articles[news_id] = replace(article, popularity=popularity)

@@ -6,6 +6,7 @@ from typing import Any
 from app.models import Article, Feedback
 from app.services.database import Database
 from app.services.llm_service import LLMService
+from app.services.rag_service import RAGService
 from app.services.recommender import NewsRecommender
 
 
@@ -15,6 +16,7 @@ class ArticleService:
     database: Database
     recommender: NewsRecommender
     llm_service: LLMService
+    rag_service: RAGService | None = None
 
     def detail_for_user(self, user_id: str, news_id: str) -> dict[str, Any]:
         article = self._get_article(news_id)
@@ -73,6 +75,16 @@ class ArticleService:
         if not question.strip():
             return {"answer": "请输入一个和新闻内容相关的问题。"}
         return self.llm_service.answer_article_question(self._get_article(news_id), question.strip())
+
+    def grounded_analysis(self, user_id: str, news_id: str) -> dict[str, Any]:
+        if self.rag_service is None:
+            return {
+                "answer": "本地资料库服务尚未启用。",
+                "citations": [],
+                "confidence": 0.0,
+                "missing_evidence": True,
+            }
+        return self.rag_service.analyze_article(user_id, self._get_article(news_id))
 
     def _article_with_meta(self, news_id: str, meta: dict[str, Any]) -> dict[str, Any]:
         payload = self.articles[news_id].to_dict()

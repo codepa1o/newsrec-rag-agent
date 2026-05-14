@@ -24,7 +24,7 @@ class NewsRecommender:
         self.explainer = ExplanationService()
         self.retrieval_top_k = retrieval_top_k
 
-    def recommend(self, user_id: str, top_k: int = 10) -> list[Recommendation]:
+    def recommend(self, user_id: str, top_k: int = 20) -> list[Recommendation]:
         profile = self.profile_service.build_profile(user_id)
         query = self._profile_query(profile)
         exclude_ids = set(profile.recent_clicked_news)

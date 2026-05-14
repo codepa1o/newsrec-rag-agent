@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
@@ -46,13 +46,24 @@ class AskRequest(BaseModel):
 
 class AgentRecommendRequest(BaseModel):
     query: str = Field(min_length=1, max_length=300)
-    top_k: int = Field(default=5, ge=1, le=20)
+    top_k: int = Field(default=20, ge=1, le=50)
+
+
+class RAGQueryRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=800)
+    top_k: int = Field(default=5, ge=1, le=12)
+    document_id: str | None = None
+
+
+class AgentChatRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=800)
+    top_k: int = Field(default=5, ge=1, le=12)
 
 
 app = FastAPI(
     title="智能新闻推荐 RAG Agent",
-    description="基于 FastAPI、LangGraph、LangChain、ChromaDB 和 DashScope 预留能力的智能新闻推荐系统。",
-    version="0.2.0",
+    description="基于 FastAPI、LangGraph、LangChain、ChromaDB-ready 和 DashScope-ready 的智能新闻推荐与本地资料库 RAG 系统。",
+    version="0.3.0",
 )
 
 
@@ -68,8 +79,8 @@ def current_user(
     return user
 
 
-def not_found(news_id: str) -> HTTPException:
-    return HTTPException(status_code=404, detail=f"未找到新闻：{news_id}")
+def not_found(message: str) -> HTTPException:
+    return HTTPException(status_code=404, detail=message)
 
 
 @app.get("/health")
@@ -137,16 +148,13 @@ def get_my_profile_summary(
 
 @app.get("/me/recommend")
 def recommend_for_me(
-    top_k: int = 10,
+    top_k: int | None = None,
     user: UserRecord = Depends(current_user),
     container: ServiceContainer = Depends(get_container),
 ) -> dict:
+    top_k = top_k or container.settings.recommend_top_k
     recommendations = container.recommender.recommend(user_id=user.user_id, top_k=top_k)
-    return {
-        "user_id": user.user_id,
-        "top_k": top_k,
-        "items": [item.to_dict() for item in recommendations],
-    }
+    return {"user_id": user.user_id, "top_k": top_k, "items": [item.to_dict() for item in recommendations]}
 
 
 @app.get("/me/articles/{news_id}")
@@ -158,7 +166,7 @@ def get_my_article_detail(
     try:
         return container.article_service.detail_for_user(user.user_id, news_id)
     except KeyError as exc:
-        raise not_found(news_id) from exc
+        raise not_found(f"未找到新闻：{news_id}") from exc
 
 
 @app.post("/me/articles/{news_id}/view")
@@ -170,7 +178,7 @@ def record_article_view(
     try:
         return container.article_service.record_view(user.user_id, news_id)
     except KeyError as exc:
-        raise not_found(news_id) from exc
+        raise not_found(f"未找到新闻：{news_id}") from exc
 
 
 @app.post("/me/articles/{news_id}/favorite")
@@ -187,7 +195,7 @@ def favorite_article(
             favorite=None if payload is None else payload.favorite,
         )
     except KeyError as exc:
-        raise not_found(news_id) from exc
+        raise not_found(f"未找到新闻：{news_id}") from exc
 
 
 @app.get("/me/favorites")
@@ -209,7 +217,7 @@ def summarize_article(
     try:
         return container.article_service.summarize(news_id)
     except KeyError as exc:
-        raise not_found(news_id) from exc
+        raise not_found(f"未找到新闻：{news_id}") from exc
 
 
 @app.post("/me/articles/{news_id}/ask")
@@ -222,7 +230,90 @@ def ask_article(
     try:
         return container.article_service.ask(news_id, payload.question)
     except KeyError as exc:
-        raise not_found(news_id) from exc
+        raise not_found(f"未找到新闻：{news_id}") from exc
+
+
+@app.post("/me/articles/{news_id}/grounded-analysis")
+def grounded_article_analysis(
+    news_id: str,
+    user: UserRecord = Depends(current_user),
+    container: ServiceContainer = Depends(get_container),
+) -> dict:
+    try:
+        return container.article_service.grounded_analysis(user.user_id, news_id)
+    except KeyError as exc:
+        raise not_found(f"未找到新闻：{news_id}") from exc
+
+
+@app.post("/me/documents/upload")
+async def upload_document(
+    request: Request,
+    user: UserRecord = Depends(current_user),
+    container: ServiceContainer = Depends(get_container),
+) -> dict:
+    try:
+        form = await request.form()
+        file = form.get("file")
+        if file is None or not hasattr(file, "file"):
+            raise ValueError("请上传文件字段 file")
+        return container.document_service.ingest_upload(user.user_id, getattr(file, "filename", None) or "document", file.file)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/me/documents")
+def list_documents(user: UserRecord = Depends(current_user), container: ServiceContainer = Depends(get_container)) -> dict:
+    return {"items": container.document_service.list_documents(user.user_id)}
+
+
+@app.get("/me/documents/{document_id}")
+def get_document(
+    document_id: str,
+    user: UserRecord = Depends(current_user),
+    container: ServiceContainer = Depends(get_container),
+) -> dict:
+    try:
+        return container.document_service.get_document(user.user_id, document_id)
+    except KeyError as exc:
+        raise not_found(f"未找到文档：{document_id}") from exc
+
+
+@app.delete("/me/documents/{document_id}")
+def delete_document(
+    document_id: str,
+    user: UserRecord = Depends(current_user),
+    container: ServiceContainer = Depends(get_container),
+) -> dict:
+    deleted = container.document_service.delete_document(user.user_id, document_id)
+    if not deleted:
+        raise not_found(f"未找到文档：{document_id}")
+    return {"message": "文档已删除", "document_id": document_id}
+
+
+@app.post("/me/documents/{document_id}/reindex")
+def reindex_document(
+    document_id: str,
+    user: UserRecord = Depends(current_user),
+    container: ServiceContainer = Depends(get_container),
+) -> dict:
+    try:
+        return container.document_service.reindex_document(user.user_id, document_id)
+    except KeyError as exc:
+        raise not_found(f"未找到文档：{document_id}") from exc
+
+
+@app.post("/me/rag/query")
+def query_documents(
+    payload: RAGQueryRequest,
+    user: UserRecord = Depends(current_user),
+    container: ServiceContainer = Depends(get_container),
+) -> dict:
+    return container.rag_service.query(
+        user_id=user.user_id,
+        question=payload.question,
+        top_k=payload.top_k,
+        document_id=payload.document_id,
+    )
 
 
 @app.post("/me/agent/recommend")
@@ -243,26 +334,42 @@ def agent_recommend(
     return response
 
 
+@app.post("/me/agent/chat")
+def agent_chat(
+    payload: AgentChatRequest,
+    user: UserRecord = Depends(current_user),
+    container: ServiceContainer = Depends(get_container),
+) -> dict:
+    state = container.research_workflow.run(user.user_id, payload.query, top_k=payload.top_k)
+    response = {
+        "query": payload.query,
+        "intent": state.get("intent"),
+        "answer": state.get("answer", ""),
+        "items": state.get("news_items", []),
+        "rag": state.get("rag_result", {}),
+        "workflow_trace": state.get("workflow_trace", []),
+    }
+    container.database.record_agent_run(user.user_id, payload.query, response)
+    return response
+
+
 @app.get("/users/{user_id}/profile")
 def get_user_profile(user_id: str, container: ServiceContainer = Depends(get_container)) -> dict:
     return container.recommender.get_profile(user_id)
 
 
 @app.get("/recommend/{user_id}")
-def recommend(user_id: str, top_k: int = 10, container: ServiceContainer = Depends(get_container)) -> dict:
+def recommend(user_id: str, top_k: int | None = None, container: ServiceContainer = Depends(get_container)) -> dict:
+    top_k = top_k or container.settings.recommend_top_k
     recommendations = container.recommender.recommend(user_id=user_id, top_k=top_k)
-    return {
-        "user_id": user_id,
-        "top_k": top_k,
-        "items": [item.to_dict() for item in recommendations],
-    }
+    return {"user_id": user_id, "top_k": top_k, "items": [item.to_dict() for item in recommendations]}
 
 
 @app.get("/articles/{news_id}")
 def get_article(news_id: str, container: ServiceContainer = Depends(get_container)) -> dict:
     article = container.store.articles.get(news_id)
     if not article:
-        raise not_found(news_id)
+        raise not_found(f"未找到新闻：{news_id}")
     return article.to_dict()
 
 
@@ -272,7 +379,7 @@ def record_feedback(payload: FeedbackRequest, container: ServiceContainer = Depe
         raise HTTPException(status_code=400, detail="缺少用户 ID")
     article = container.store.articles.get(payload.news_id)
     if not article:
-        raise not_found(payload.news_id)
+        raise not_found(f"未找到新闻：{payload.news_id}")
     feedback = Feedback(
         user_id=payload.user_id,
         news_id=payload.news_id,
@@ -291,7 +398,7 @@ def record_my_feedback(
 ) -> dict:
     article = container.store.articles.get(payload.news_id)
     if not article:
-        raise not_found(payload.news_id)
+        raise not_found(f"未找到新闻：{payload.news_id}")
     feedback = Feedback(
         user_id=user.user_id,
         news_id=payload.news_id,

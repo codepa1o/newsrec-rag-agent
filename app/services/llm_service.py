@@ -29,11 +29,12 @@ class LLMService:
             return cached
 
         prompt = (
-            "请用中文为下面这篇新闻生成结构化摘要，返回 JSON，字段为 one_sentence、key_points、audience。"
+            "请用中文为下面这篇新闻生成结构化摘要，返回 JSON，字段为 "
+            "one_sentence、key_points、audience。"
             f"\n标题：{article.title}\n摘要：{article.abstract}\n类别：{article.category}/{article.subcategory}"
         )
         content = self._chat(prompt)
-        result = self._parse_json_or_fallback(content, self._fallback_summary(article))
+        result = self._parse_summary_json(content, self._fallback_summary(article))
         self._set_cached_json("article_summary", cache_key, result)
         return result
 
@@ -45,7 +46,7 @@ class LLMService:
 
         prompt = (
             "你是新闻推荐系统中的阅读助手。请只基于给定新闻内容回答用户问题。"
-            "如果新闻内容不足以回答，请明确说明信息不足，并给出可参考的方向。"
+            "如果新闻内容不足以回答，请明确说明信息不足。"
             f"\n标题：{article.title}\n摘要：{article.abstract}\n类别：{article.category}/{article.subcategory}"
             f"\n用户问题：{question}"
         )
@@ -92,6 +93,29 @@ class LLMService:
         self._set_cached_json("profile_summary", cache_key, result)
         return result
 
+    def grounded_answer(self, question: str, contexts: list[dict[str, Any]]) -> str:
+        if not contexts:
+            return ""
+        context_text = "\n\n".join(
+            f"[{index}] 来源：{item['filename']}；页码/标题：{item.get('page') or item.get('heading_path') or '无'}；"
+            f"片段：{item['text'][:1000]}"
+            for index, item in enumerate(contexts, start=1)
+        )
+        cache_key = stable_key("grounded_answer", question, context_text)
+        cached = self._get_cached_json("grounded_answer", cache_key)
+        if cached and cached.get("answer"):
+            return str(cached["answer"])
+
+        prompt = (
+            "你是严谨的本地资料库 RAG 助手。请只根据给定资料片段回答问题。"
+            "回答必须包含引用编号，例如 [1]、[2]。如果资料不足，请直接说明本地资料中没有找到足够依据。"
+            f"\n用户问题：{question}\n\n资料片段：\n{context_text}"
+        )
+        answer = self._chat(prompt)
+        if answer:
+            self._set_cached_json("grounded_answer", cache_key, {"answer": answer})
+        return answer
+
     def _chat(self, prompt: str) -> str:
         if not self.settings.use_dashscope or not self.settings.dashscope_api_key:
             return ""
@@ -105,10 +129,10 @@ class LLMService:
         payload = {
             "model": self.settings.llm_model,
             "messages": [
-                {"role": "system", "content": "你是一个严谨的中文新闻推荐系统助手。"},
+                {"role": "system", "content": "你是一个严谨的中文新闻推荐与资料库问答助手。"},
                 {"role": "user", "content": prompt},
             ],
-            "temperature": 0.3,
+            "temperature": 0.2,
         }
         try:
             response = httpx.post(url, headers=headers, json=payload, timeout=self.settings.ai_timeout_seconds)
@@ -133,7 +157,7 @@ class LLMService:
         if self.settings.ai_cache_enabled:
             self.database.set_cached_ai(task, cache_key, json.dumps(value, ensure_ascii=False))
 
-    def _parse_json_or_fallback(self, content: str, fallback: dict[str, Any]) -> dict[str, Any]:
+    def _parse_summary_json(self, content: str, fallback: dict[str, Any]) -> dict[str, Any]:
         if not content:
             return fallback
         try:
@@ -161,7 +185,7 @@ class LLMService:
 
     def _fallback_answer(self, article: Article, question: str) -> str:
         return (
-            "当前未启用 DashScope API，因此使用本地 fallback 回答："
+            "当前未启用 DashScope API，因此使用本地 fallback 回答。"
             f"这篇新闻的标题是《{article.title}》，摘要为：{article.abstract or '暂无摘要'}。"
             "你可以配置 DASHSCOPE_API_KEY 获取更完整的新闻问答能力。"
         )
