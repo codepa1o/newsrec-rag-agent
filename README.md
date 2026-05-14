@@ -1,21 +1,74 @@
-# 智能新闻推荐 RAG Agent
+# NewsRec-RAG Agent
 
-面向新闻推荐系统的 Agentic RAG 个性化推荐平台。项目结合 MIND 新闻推荐数据集思路、用户行为建模、多路召回、重排序、可解释推荐、登录注册、收藏历史、DashScope/Qwen AI 能力，并在 V3 新增 **本地资料库 RAG + 多 Agent 协作**。
+面向新闻推荐系统的 Agentic RAG 个性化推荐与实验平台。项目结合 MINDlarge 抽样数据、用户行为建模、多策略推荐、离线评估、本地资料库 RAG、多 Agent 协作、FastAPI 后端和 Streamlit 演示界面，适合作为简历中的第二个 Agent 项目。
 
-项目默认使用从 MINDlarge 抽取的本地 sample 数据，当前包含约 1.4 万条新闻和 1200 条用户行为；没有配置 DashScope 时，系统会自动使用本地 hashing embedding 和 AI fallback，方便完整演示。
+当前默认使用从 MINDlarge 抽取的本地 sample 数据，包含约 1.4 万条新闻和 1200 条用户行为。没有配置 DashScope 时，系统会使用本地 hashing embedding 和 fallback 文本生成，保证项目可离线演示。
 
-## 核心功能
+## 核心亮点
 
-- 登录注册：SQLite 存储用户、会话、反馈、收藏、浏览历史。
-- 个性化推荐：结合历史点击、收藏、浏览、喜欢、屏蔽类别构建兴趣画像。
-- 新闻详情页：点击标题进入站内详情页，查看推荐理由、相关新闻、AI 摘要和新闻问答。
-- 本地资料库 RAG：支持上传 Markdown、TXT、PDF，解析、切分、向量索引并在回答中引用来源。
-- 扫描版 PDF 支持：普通 PDF 使用 PyMuPDF 提取文本，扫描版 PDF 尝试使用 rapidocr-onnxruntime OCR。
-- RAG 问答：包含召回、启发式重排、引用来源、证据不足保护、答案评估。
-- 新闻资料解读：在新闻详情页结合用户上传资料解释新闻与资料库的关系。
-- 多 Agent 助手：Router、Retriever、Reranker、Answer、Verifier 协作，展示运行轨迹。
-- 评估看板：HitRate@K、MRR@K、NDCG@K。
-- 工程栈：FastAPI、Streamlit、LangGraph、LangChain、ChromaDB-ready、DashScope-ready、SQLite、pytest。
+- 新闻推荐系统：用户画像、多路召回、重排序、多样性过滤、冷启动推荐。
+- 多策略实验平台：热门 baseline、类别偏好、向量语义、反馈增强、Agentic RAG 推荐对比。
+- 离线评估：HitRate@K、MRR@K、NDCG@K，多 K 值横向对比。
+- 本地资料库 RAG：Markdown/TXT/PDF 上传、PDF OCR fallback、文档切分、向量检索、混合检索、引用来源、幻觉控制。
+- 新闻场景增强：同事件新闻聚类、观点角度对比、兴趣漂移分析、AI 个性化新闻日报。
+- 多 Agent 协作：Planner、Router、UserProfiler、Retriever、NewsAnalyst、Reranker、Experiment、Answer、CitationVerifier。
+- 工程化：FastAPI、Streamlit、SQLite、ChromaDB-ready、DashScope-ready、Docker、GitHub Actions、pytest。
+
+## 架构图
+
+```text
+Streamlit UI
+   |
+   v
+FastAPI API
+   |
+   +-- RecommendationExperimentService
+   |     +-- hot / category / vector / feedback / agentic_rag
+   |     +-- HitRate@K / MRR@K / NDCG@K
+   |
+   +-- NewsRecommender
+   |     +-- profile query
+   |     +-- vector recall
+   |     +-- category recall
+   |     +-- hot recall
+   |     +-- rerank + diversity filter
+   |
+   +-- RAGService
+   |     +-- dense retrieval
+   |     +-- keyword retrieval
+   |     +-- citation verifier
+   |     +-- answer evaluation
+   |
+   +-- MultiAgentResearchWorkflow
+         +-- PlannerAgent
+         +-- RouterAgent
+         +-- UserProfilerAgent
+         +-- RetrieverAgent
+         +-- NewsAnalystAgent
+         +-- RerankAgent
+         +-- ExperimentAgent
+         +-- AnswerAgent
+         +-- CitationVerifierAgent
+```
+
+## 数据流
+
+```text
+MINDlarge sample
+   -> news.tsv / behaviors.tsv
+   -> NewsDataStore
+   -> user profile + popularity
+   -> recommendation candidates
+   -> rerank / diversity
+   -> recommendation API / Streamlit
+
+Local documents
+   -> upload Markdown/TXT/PDF
+   -> parse / OCR / chunk
+   -> SQLite metadata + vector index
+   -> hybrid retrieval
+   -> grounded answer + citations
+```
 
 ## 快速启动
 
@@ -24,11 +77,6 @@ cd E:\pythonlearning\code\agent_learning\newsrec-rag-agent
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-```
-
-启动后端和前端：
-
-```powershell
 .\run_dev.ps1
 ```
 
@@ -46,66 +94,41 @@ API Docs:     http://127.0.0.1:8000/docs
 密码：demo123456
 ```
 
-## V3 使用方式
+## 页面功能
 
-1. 登录后进入 `本地资料库` 页面。
-2. 上传 `.md`、`.txt` 或 `.pdf` 文件。
-3. 进入 `资料库问答` 页面，围绕上传资料提问。
-4. 在 `新闻详情` 页面点击 `资料解读`，查看这篇新闻和本地资料的关联。
-5. 在 `多 Agent 助手` 输入自然语言需求，例如：
-
-```text
-结合我上传的资料，推荐几篇 AI 监管相关的新闻
-```
-
-回答会展示引用来源、可信度、答案评估和多 Agent 运行轨迹。
+- `系统仪表盘`：新闻数、用户数、资料库、RAG 查询、行为闭环指标。
+- `推荐`：个性化新闻流。
+- `推荐策略对比`：对比热门、类别、向量、反馈增强、Agentic RAG。
+- `实验评估`：多策略 HitRate/MRR/NDCG 对比。
+- `兴趣漂移`：近期兴趣 vs 长期兴趣。
+- `新闻事件聚类`：同事件相关新闻与观点角度。
+- `AI 新闻日报`：基于用户画像生成个性化简报。
+- `本地资料库`：上传、解析、切分、索引本地资料。
+- `资料库问答`：混合检索、引用来源、答案评估。
+- `Agent 运行观测`：展示多 Agent trace。
 
 ## 主要 API
 
 ```text
-GET  /health
-POST /auth/register
-POST /auth/login
-POST /auth/logout
+GET  /metrics/overview
+POST /recommend/compare
+POST /recommend/cold-start
+POST /evaluate/strategies
 
-GET  /me
-GET  /me/profile
-GET  /me/profile/summary
-GET  /me/recommend?top_k=10
-GET  /me/articles/{news_id}
-POST /me/articles/{news_id}/view
-POST /me/articles/{news_id}/favorite
-POST /me/articles/{news_id}/summary
-POST /me/articles/{news_id}/ask
-POST /me/articles/{news_id}/grounded-analysis
-GET  /me/favorites
-GET  /me/history
-POST /me/feedback
+GET  /me/interest-drift
+POST /me/daily-briefing
+POST /me/rag/hybrid-query
+POST /me/agent/trace
 
-POST /me/documents/upload
-GET  /me/documents
-GET  /me/documents/{document_id}
-DELETE /me/documents/{document_id}
-POST /me/documents/{document_id}/reindex
-POST /me/rag/query
-POST /me/agent/recommend
-POST /me/agent/chat
-
-GET  /users/U100/profile
-GET  /recommend/U100?top_k=10
-GET  /articles/N1006
-POST /evaluate
+GET  /articles/{news_id}/event-cluster
+GET  /articles/{news_id}/viewpoints
 ```
 
-## 本地资料库 RAG 设计
+完整示例见：
 
-- Markdown：按标题层级切分，保留标题路径。
-- TXT / PDF：先按段落切分，超长段落再递归切分。
-- 默认 chunk size：约 1000 字符。
-- 默认 overlap：160 字符。
-- 每个 chunk 保留：document_id、filename、page、heading_path、chunk_index、snippet。
-- 向量索引：默认本地内存索引；设置 `USE_CHROMA=true` 后写入 ChromaDB。
-- 幻觉控制：没有足够证据时返回“本地资料中没有找到足够依据”，不会强行编造。
+```text
+docs/api_examples.http
+```
 
 ## DashScope / Qwen
 
@@ -121,17 +144,9 @@ AI_CACHE_ENABLED=true
 AI_TIMEOUT_SECONDS=30
 ```
 
-未配置 Key 时，AI 摘要、新闻问答、资料库问答会返回本地 fallback，项目仍可演示。
+未配置 Key 时，系统仍可运行本地 fallback。
 
-## 数据与配置
-
-```text
-data/newsrec.db        SQLite 数据库
-data/sample            从 MINDlarge 抽取的演示新闻和行为数据
-data/uploads           上传资料
-data/chroma            ChromaDB 持久化目录
-data/mind              MIND 数据目录
-```
+## 数据构建
 
 默认数据路径：
 
@@ -140,16 +155,23 @@ data/sample/news.tsv
 data/sample/behaviors.tsv
 ```
 
-如果你想从自己的 MINDlarge 重新抽样：
+从 MINDlarge 重新抽样：
 
 ```powershell
 python scripts/build_mind_sample.py --source E:\postgraduatelearning\MTP-Rec\datasets\MINDlarge\MINDlarge_train --output data/sample --max-behaviors 1200 --max-extra-news 800
 ```
 
-验证 MIND 解析：
+## Docker
 
 ```powershell
-python scripts/ingest_mind.py --news data/sample/news.tsv --behaviors data/sample/behaviors.tsv
+docker compose up --build
+```
+
+访问：
+
+```text
+API: http://127.0.0.1:8000
+UI:  http://127.0.0.1:8501
 ```
 
 ## 测试
@@ -158,16 +180,14 @@ python scripts/ingest_mind.py --news data/sample/news.tsv --behaviors data/sampl
 pytest
 ```
 
-当前测试覆盖：
+当前覆盖：
 
-- MIND 解析
-- 推荐结果结构
-- 登录、收藏、浏览历史、反馈
-- 文档上传、Markdown 切分、RAG 问答
-- 新闻资料解读
-- 多 Agent workflow
-- HitRate@K、MRR@K、NDCG@K
+- 推荐结果结构与反馈闭环。
+- 文档上传、切分、RAG 问答、引用校验。
+- 多策略推荐对比与离线评估。
+- 兴趣漂移、事件聚类、AI 日报。
+- 多 Agent trace。
 
 ## 简历描述
 
-构建面向新闻推荐系统的 Agentic RAG 个性化推荐平台，基于 MIND 数据集思路实现用户兴趣建模、多路召回、语义检索、重排序、可解释推荐、新闻详情页和离线评估；扩展本地资料库 RAG，支持 Markdown/TXT/PDF 上传、文档切分、向量索引、引用溯源、幻觉控制和答案评估；使用 LangGraph 编排 Router、Retriever、Reranker、Answer、Verifier 多 Agent 协作流程，FastAPI 提供推荐与资料库服务，Streamlit 构建中文交互式演示界面。
+构建面向新闻推荐系统的 Agentic RAG 推荐实验平台，基于 MINDlarge 抽样数据实现用户画像、多路召回、重排序、多样性控制、冷启动推荐和 HitRate/MRR/NDCG 离线评估；设计本地资料库 RAG，支持 Markdown/TXT/PDF 上传、OCR fallback、混合检索、引用溯源、幻觉控制和答案评估；使用 LangGraph 编排 Planner、Router、Retriever、Reranker、Experiment、CitationVerifier 等多 Agent 工作流，并通过 FastAPI + Streamlit 提供可观测演示界面与实验看板。

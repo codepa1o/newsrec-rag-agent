@@ -9,8 +9,10 @@ from app.services.database import Database
 from app.services.document_service import DocumentService
 from app.services.embedding import DashScopeEmbeddingProvider, HashingEmbeddingProvider
 from app.services.evaluator import Evaluator
+from app.services.experiment_service import RecommendationExperimentService
 from app.services.article_service import ArticleService
 from app.services.llm_service import LLMService
+from app.services.news_intelligence import NewsIntelligenceService
 from app.services.profile import ProfileService
 from app.services.rag_service import RAGService
 from app.services.recommender import NewsRecommender
@@ -54,6 +56,20 @@ class ServiceContainer:
             rag_service=self.rag_service,
         )
         self.evaluator = Evaluator(self.recommender, self.store.behaviors)
+        self.experiment_service = RecommendationExperimentService(
+            articles=self.store.articles,
+            behaviors=self.store.behaviors,
+            profile_service=self.profile_service,
+            recommender=self.recommender,
+            max_eval_users=settings.max_eval_users,
+        )
+        self.news_intelligence = NewsIntelligenceService(
+            articles=self.store.articles,
+            database=self.database,
+            profile_service=self.profile_service,
+            recommender=self.recommender,
+            llm_service=self.llm_service,
+        )
         self.research_workflow = MultiAgentResearchWorkflow(self)
 
     def record_feedback(self, feedback: Feedback) -> None:

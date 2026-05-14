@@ -1,7 +1,9 @@
 param(
     [int]$BackendPort = 8000,
     [int]$FrontendPort = 8501,
-    [string]$HostAddress = "127.0.0.1"
+    [string]$HostAddress = "127.0.0.1",
+    [switch]$KeepExisting,
+    [switch]$Reload
 )
 
 $ErrorActionPreference = "Stop"
@@ -32,6 +34,22 @@ function Test-PortInUse {
     return $null -ne $connection
 }
 
+function Stop-PortProcesses {
+    param([int[]]$Ports)
+
+    $processIds = Get-NetTCPConnection -LocalPort $Ports -ErrorAction SilentlyContinue |
+        Where-Object { $_.State -eq "Listen" } |
+        Select-Object -ExpandProperty OwningProcess -Unique
+
+    foreach ($processId in $processIds) {
+        $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
+        if ($null -ne $process) {
+            Write-Host "Stopping existing service on target port. PID: $processId ($($process.ProcessName))" -ForegroundColor Yellow
+            Stop-Process -Id $processId -Force
+        }
+    }
+}
+
 function Start-ServiceProcess {
     param(
         [string]$Name,
@@ -52,26 +70,55 @@ function Start-ServiceProcess {
     Write-Host "$Name started. PID: $($process.Id)" -ForegroundColor Green
 }
 
+function Wait-HttpReady {
+    param(
+        [string]$Name,
+        [string]$Url,
+        [int]$TimeoutSeconds = 30
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        try {
+            Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 3 | Out-Null
+            Write-Host "$Name is ready: $Url" -ForegroundColor Green
+            return
+        } catch {
+            Start-Sleep -Seconds 1
+        }
+    }
+    Write-Host "$Name did not respond before timeout: $Url" -ForegroundColor Yellow
+}
+
 Assert-CommandReady
 New-Item -ItemType Directory -Force -Path $LogsDir | Out-Null
 
 Write-Host "Starting NewsRec-RAG Agent..." -ForegroundColor Cyan
 Write-Host "Project root: $ProjectRoot"
 
+if (-not $KeepExisting) {
+    Stop-PortProcesses -Ports @($BackendPort, $FrontendPort)
+    Start-Sleep -Seconds 1
+}
+
 if (Test-PortInUse -Port $BackendPort) {
-    Write-Host "Backend port $BackendPort is already in use. Skipping backend startup." -ForegroundColor Yellow
+    Write-Host "Backend port $BackendPort is already in use. Use -KeepExisting only when you really want to reuse it." -ForegroundColor Yellow
 } else {
+    $backendArgs = @("-m", "uvicorn", "app.main:app", "--host", $HostAddress, "--port", "$BackendPort")
+    if ($Reload) {
+        $backendArgs = @("-m", "uvicorn", "app.main:app", "--reload", "--host", $HostAddress, "--port", "$BackendPort")
+    }
     Start-ServiceProcess `
         -Name "FastAPI backend" `
-        -Arguments @("-m", "uvicorn", "app.main:app", "--reload", "--host", $HostAddress, "--port", "$BackendPort") `
+        -Arguments $backendArgs `
         -OutLogPath $BackendOutLog `
         -ErrLogPath $BackendErrLog
 }
 
-Start-Sleep -Seconds 2
+Wait-HttpReady -Name "FastAPI backend" -Url "http://$HostAddress`:$BackendPort/health" -TimeoutSeconds 45
 
 if (Test-PortInUse -Port $FrontendPort) {
-    Write-Host "Frontend port $FrontendPort is already in use. Skipping frontend startup." -ForegroundColor Yellow
+    Write-Host "Frontend port $FrontendPort is already in use. Use -KeepExisting only when you really want to reuse it." -ForegroundColor Yellow
 } else {
     Start-ServiceProcess `
         -Name "Streamlit frontend" `
@@ -79,6 +126,8 @@ if (Test-PortInUse -Port $FrontendPort) {
         -OutLogPath $FrontendOutLog `
         -ErrLogPath $FrontendErrLog
 }
+
+Wait-HttpReady -Name "Streamlit frontend" -Url "http://$HostAddress`:$FrontendPort" -TimeoutSeconds 30
 
 Write-Host ""
 Write-Host "Ready:" -ForegroundColor Cyan

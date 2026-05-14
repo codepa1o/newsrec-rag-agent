@@ -36,6 +36,7 @@ class Settings:
     ai_cache_enabled: bool = os.getenv("AI_CACHE_ENABLED", "true").lower() == "true"
     ai_timeout_seconds: int = int(os.getenv("AI_TIMEOUT_SECONDS", "30"))
     max_upload_mb: int = int(os.getenv("MAX_UPLOAD_MB", "20"))
+    max_eval_users: int = int(os.getenv("MAX_EVAL_USERS", "80"))
 
 
 def get_settings() -> Settings:

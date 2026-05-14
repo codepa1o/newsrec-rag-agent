@@ -1,3 +1,9 @@
+import os
+from pathlib import Path
+
+os.environ.setdefault("MIND_NEWS_PATH", str(Path("missing-news.tsv")))
+os.environ.setdefault("MIND_BEHAVIORS_PATH", str(Path("missing-behaviors.tsv")))
+
 from fastapi.testclient import TestClient
 
 from app.main import app

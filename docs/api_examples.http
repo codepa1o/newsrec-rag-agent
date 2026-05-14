@@ -1,0 +1,52 @@
+### Health
+GET http://127.0.0.1:8000/health
+
+### Login
+POST http://127.0.0.1:8000/auth/login
+Content-Type: application/json
+
+{
+  "username": "U100",
+  "password": "demo123456"
+}
+
+### Metrics overview
+GET http://127.0.0.1:8000/metrics/overview
+
+### Recommendation compare
+POST http://127.0.0.1:8000/recommend/compare
+Content-Type: application/json
+
+{
+  "user_id": "U100",
+  "top_k": 20,
+  "query": "AI regulation"
+}
+
+### Strategy evaluation
+POST http://127.0.0.1:8000/evaluate/strategies
+Content-Type: application/json
+
+{
+  "k_values": [5, 10, 20]
+}
+
+### Hybrid RAG query
+POST http://127.0.0.1:8000/me/rag/hybrid-query
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "question": "新闻推荐系统为什么需要推荐透明度？",
+  "top_k": 5
+}
+
+### Agent trace
+POST http://127.0.0.1:8000/me/agent/trace
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "query": "结合我的资料库，推荐并解释几篇 AI 监管相关的新闻",
+  "top_k": 5
+}

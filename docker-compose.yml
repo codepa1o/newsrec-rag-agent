@@ -1,0 +1,29 @@
+services:
+  api:
+    build: .
+    container_name: newsrec-rag-api
+    env_file:
+      - .env.example
+    environment:
+      - DATABASE_PATH=/app/data/newsrec.db
+      - UPLOAD_DIR=/app/data/uploads
+      - CHROMA_PERSIST_DIR=/app/data/chroma
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+
+  ui:
+    build: .
+    container_name: newsrec-rag-ui
+    env_file:
+      - .env.example
+    environment:
+      - API_BASE_URL=http://api:8000
+    command: ["streamlit", "run", "ui/streamlit_app.py", "--server.address", "0.0.0.0", "--server.port", "8501", "--server.headless", "true"]
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - api

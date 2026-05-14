@@ -30,6 +30,7 @@ class ArticleService:
             "rule_reason": recommendation.reason,
             "evidence": recommendation.evidence,
             "related": [item.to_dict() for item in self.related_articles(user_id, article)],
+            "event_cluster": self._event_cluster(article),
             "has_original_url": bool(article.url),
         }
 
@@ -85,6 +86,10 @@ class ArticleService:
                 "missing_evidence": True,
             }
         return self.rag_service.analyze_article(user_id, self._get_article(news_id))
+
+    def _event_cluster(self, article: Article) -> list[dict[str, Any]]:
+        related = self.recommender.search(article.title, top_k=6, filters={"category": article.category})
+        return [item.to_dict() for item in related if item.news_id != article.news_id][:5]
 
     def _article_with_meta(self, news_id: str, meta: dict[str, Any]) -> dict[str, Any]:
         payload = self.articles[news_id].to_dict()

@@ -57,13 +57,32 @@ class RAGQueryRequest(BaseModel):
 
 class AgentChatRequest(BaseModel):
     query: str = Field(min_length=1, max_length=800)
-    top_k: int = Field(default=5, ge=1, le=12)
+    top_k: int = Field(default=5, ge=1, le=50)
+
+
+class RecommendCompareRequest(BaseModel):
+    user_id: str = "U100"
+    top_k: int = Field(default=20, ge=1, le=50)
+    query: str | None = None
+
+
+class StrategyEvaluationRequest(BaseModel):
+    k_values: list[int] = Field(default_factory=lambda: [5, 10, 20])
+
+
+class ColdStartRequest(BaseModel):
+    interest_tags: list[str] = Field(default_factory=list)
+    top_k: int = Field(default=20, ge=1, le=50)
+
+
+class DailyBriefingRequest(BaseModel):
+    top_k: int = Field(default=8, ge=1, le=20)
 
 
 app = FastAPI(
     title="智能新闻推荐 RAG Agent",
-    description="基于 FastAPI、LangGraph、LangChain、ChromaDB-ready 和 DashScope-ready 的智能新闻推荐与本地资料库 RAG 系统。",
-    version="0.3.0",
+    description="面向新闻推荐系统的 Agentic RAG、推荐实验、多 Agent 协作与本地资料库平台。",
+    version="0.4.0",
 )
 
 
@@ -93,6 +112,11 @@ def health(container: ServiceContainer = Depends(get_container)) -> dict:
         "use_dashscope": container.settings.use_dashscope,
         "ai_cache_enabled": container.settings.ai_cache_enabled,
     }
+
+
+@app.get("/metrics/overview")
+def metrics_overview(container: ServiceContainer = Depends(get_container)) -> dict:
+    return container.news_intelligence.metrics_overview()
 
 
 @app.post("/auth/register")
@@ -146,6 +170,11 @@ def get_my_profile_summary(
     return container.llm_service.summarize_profile(profile)
 
 
+@app.get("/me/interest-drift")
+def interest_drift(user: UserRecord = Depends(current_user), container: ServiceContainer = Depends(get_container)) -> dict:
+    return container.news_intelligence.interest_drift(user.user_id)
+
+
 @app.get("/me/recommend")
 def recommend_for_me(
     top_k: int | None = None,
@@ -155,6 +184,16 @@ def recommend_for_me(
     top_k = top_k or container.settings.recommend_top_k
     recommendations = container.recommender.recommend(user_id=user.user_id, top_k=top_k)
     return {"user_id": user.user_id, "top_k": top_k, "items": [item.to_dict() for item in recommendations]}
+
+
+@app.post("/me/daily-briefing")
+def daily_briefing(
+    payload: DailyBriefingRequest | None = None,
+    user: UserRecord = Depends(current_user),
+    container: ServiceContainer = Depends(get_container),
+) -> dict:
+    top_k = payload.top_k if payload else 8
+    return container.news_intelligence.daily_briefing(user.user_id, top_k=top_k)
 
 
 @app.get("/me/articles/{news_id}")
@@ -308,12 +347,16 @@ def query_documents(
     user: UserRecord = Depends(current_user),
     container: ServiceContainer = Depends(get_container),
 ) -> dict:
-    return container.rag_service.query(
-        user_id=user.user_id,
-        question=payload.question,
-        top_k=payload.top_k,
-        document_id=payload.document_id,
-    )
+    return container.rag_service.query(user.user_id, payload.question, payload.top_k, payload.document_id)
+
+
+@app.post("/me/rag/hybrid-query")
+def hybrid_query_documents(
+    payload: RAGQueryRequest,
+    user: UserRecord = Depends(current_user),
+    container: ServiceContainer = Depends(get_container),
+) -> dict:
+    return container.rag_service.hybrid_query(user.user_id, payload.question, payload.top_k, payload.document_id)
 
 
 @app.post("/me/agent/recommend")
@@ -347,10 +390,52 @@ def agent_chat(
         "answer": state.get("answer", ""),
         "items": state.get("news_items", []),
         "rag": state.get("rag_result", {}),
+        "evaluation": state.get("evaluation_result", {}),
         "workflow_trace": state.get("workflow_trace", []),
     }
     container.database.record_agent_run(user.user_id, payload.query, response)
     return response
+
+
+@app.post("/me/agent/trace")
+def agent_trace(
+    payload: AgentChatRequest,
+    user: UserRecord = Depends(current_user),
+    container: ServiceContainer = Depends(get_container),
+) -> dict:
+    return agent_chat(payload, user, container)
+
+
+@app.post("/recommend/compare")
+def compare_recommendations(payload: RecommendCompareRequest, container: ServiceContainer = Depends(get_container)) -> dict:
+    return container.experiment_service.compare(payload.user_id, top_k=payload.top_k, query=payload.query)
+
+
+@app.post("/recommend/cold-start")
+def cold_start_recommend(payload: ColdStartRequest, container: ServiceContainer = Depends(get_container)) -> dict:
+    return container.experiment_service.cold_start(payload.interest_tags, top_k=payload.top_k)
+
+
+@app.post("/evaluate/strategies")
+def evaluate_strategies(payload: StrategyEvaluationRequest | None = None, container: ServiceContainer = Depends(get_container)) -> dict:
+    k_values = payload.k_values if payload else [5, 10, 20]
+    return container.experiment_service.evaluate_strategies(k_values=k_values)
+
+
+@app.get("/articles/{news_id}/event-cluster")
+def event_cluster(news_id: str, top_k: int = 8, container: ServiceContainer = Depends(get_container)) -> dict:
+    try:
+        return container.news_intelligence.event_cluster(news_id, top_k=top_k)
+    except KeyError as exc:
+        raise not_found(f"未找到新闻：{news_id}") from exc
+
+
+@app.get("/articles/{news_id}/viewpoints")
+def compare_viewpoints(news_id: str, top_k: int = 5, container: ServiceContainer = Depends(get_container)) -> dict:
+    try:
+        return container.news_intelligence.compare_viewpoints(news_id, top_k=top_k)
+    except KeyError as exc:
+        raise not_found(f"未找到新闻：{news_id}") from exc
 
 
 @app.get("/users/{user_id}/profile")
