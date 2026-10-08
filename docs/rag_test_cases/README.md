@@ -7,6 +7,9 @@
 - `ai_recommendation_governance.md`：测试推荐透明度、可解释推荐、反馈闭环、幻觉控制和评估指标。
 - `local_rag_policy_notes.txt`：测试 TXT 解析、引用来源、扫描 PDF/OCR 设计和多 Agent 角色。
 - `news_recommendation_research.md`：测试新闻推荐系统研究方向、多路召回、重排序和 RAG 推荐解释。
+- `rag_local_kb_guide.md`：测试本地知识库检索、引用、保守回答和 hybrid query。
+- `document_ingestion_checklist.txt`：测试纯文本导入、分段切分、重复文件处理和文档重建索引。
+- `hybrid_recommendation_case_study.md`：测试推荐解释、RAG 证据结合和多段落 chunking。
 
 ## 手动测试流程
 

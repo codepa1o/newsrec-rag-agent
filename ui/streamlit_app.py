@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import html
 import os
 from pathlib import Path
@@ -11,7 +10,8 @@ import streamlit as st
 
 
 API_BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:8000")
-BACKGROUND_PATH = Path(__file__).parent / "assets" / "boki.png"
+BASE_DIR = Path(__file__).resolve().parent
+STYLE_PATH = BASE_DIR / "styles.css"
 DEFAULT_USER = "U100"
 DEFAULT_PASSWORD = "demo123456"
 
@@ -28,340 +28,11 @@ def _escape(value: Any) -> str:
     return html.escape(str(value or ""), quote=True)
 
 
-def _background_data_uri() -> str:
-    if not BACKGROUND_PATH.exists():
-        return ""
-    encoded = base64.b64encode(BACKGROUND_PATH.read_bytes()).decode("ascii")
-    return f"data:image/png;base64,{encoded}"
-
-
 def inject_styles() -> None:
-    bg_uri = _background_data_uri()
-    background_rule = (
-        f"""
-        background:
-            linear-gradient(110deg, rgba(250, 247, 244, 0.92) 0%, rgba(244, 249, 250, 0.88) 50%, rgba(255, 246, 247, 0.90) 100%),
-            url("{bg_uri}") center center / cover fixed;
-        """
-        if bg_uri
-        else "background: linear-gradient(135deg, #faf7f4 0%, #eef7f8 52%, #fff1f2 100%);"
-    )
+    css = STYLE_PATH.read_text(encoding="utf-8") if STYLE_PATH.exists() else ""
     st.markdown(
         f"""
-        <style>
-        :root {{
-            --bg: #faf7f4;
-            --panel: rgba(255, 255, 255, 0.82);
-            --panel-strong: rgba(255, 255, 255, 0.94);
-            --line: rgba(42, 52, 57, 0.12);
-            --text: #20272c;
-            --muted: #687278;
-            --soft: #f6f1ec;
-            --accent: #9f3f5f;
-            --accent-2: #18777f;
-            --accent-3: #c58b32;
-            --shadow: 0 18px 54px rgba(34, 42, 46, 0.13);
-            --radius: 8px;
-        }}
-
-        .stApp {{
-            {background_rule}
-            color: var(--text);
-        }}
-
-        .block-container {{
-            max-width: 1280px;
-            padding: 1.25rem 1.6rem 3rem;
-            animation: pageEnter 360ms ease-out both;
-        }}
-
-        @keyframes pageEnter {{
-            from {{ opacity: 0; transform: translateY(12px); }}
-            to {{ opacity: 1; transform: translateY(0); }}
-        }}
-
-        @keyframes softRise {{
-            from {{ opacity: 0; transform: translateY(8px); }}
-            to {{ opacity: 1; transform: translateY(0); }}
-        }}
-
-        [data-testid="stSidebar"] {{
-            background: rgba(255, 255, 255, 0.90);
-            border-right: 1px solid var(--line);
-            backdrop-filter: blur(18px);
-        }}
-
-        [data-testid="stSidebar"] * {{
-            letter-spacing: 0;
-        }}
-
-        h1, h2, h3, h4, p, label, span, div {{
-            letter-spacing: 0;
-        }}
-
-        h1 {{
-            font-size: 2rem;
-            line-height: 1.18;
-        }}
-
-        h2 {{
-            font-size: 1.45rem;
-        }}
-
-        h3 {{
-            font-size: 1.12rem;
-        }}
-
-        .page-shell {{
-            animation: softRise 300ms ease-out both;
-        }}
-
-        .hero {{
-            border: 1px solid var(--line);
-            border-radius: var(--radius);
-            background: var(--panel);
-            box-shadow: var(--shadow);
-            backdrop-filter: blur(18px);
-            padding: 1.05rem 1.1rem;
-            margin-bottom: 1rem;
-        }}
-
-        .hero-kicker {{
-            color: var(--accent-2);
-            font-size: 0.82rem;
-            font-weight: 800;
-            margin-bottom: 0.25rem;
-        }}
-
-        .hero-title {{
-            margin: 0;
-            font-size: clamp(1.55rem, 2.4vw, 2.25rem);
-            line-height: 1.16;
-            font-weight: 850;
-            color: var(--text);
-        }}
-
-        .hero-subtitle {{
-            max-width: 860px;
-            margin: 0.45rem 0 0;
-            color: var(--muted);
-            line-height: 1.7;
-            font-size: 0.98rem;
-        }}
-
-        .auth-wrap {{
-            min-height: 78vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 4vh 0;
-        }}
-
-        .auth-hero {{
-            width: min(760px, 92vw);
-            text-align: center;
-            margin: 0 auto 1rem;
-            animation: softRise 420ms ease-out both;
-        }}
-
-        .auth-badge {{
-            display: inline-flex;
-            align-items: center;
-            padding: 0.32rem 0.76rem;
-            border-radius: 999px;
-            background: rgba(255, 255, 255, 0.78);
-            border: 1px solid var(--line);
-            color: var(--accent-2);
-            font-size: 0.82rem;
-            font-weight: 850;
-        }}
-
-        .auth-title {{
-            margin: 0.8rem 0 0.45rem;
-            font-size: clamp(2.15rem, 5vw, 4.35rem);
-            line-height: 1.02;
-            font-weight: 900;
-            color: #1f2529;
-            text-shadow: 0 12px 34px rgba(255, 255, 255, 0.65);
-        }}
-
-        .auth-copy {{
-            max-width: 680px;
-            margin: 0 auto;
-            color: #4d575d;
-            line-height: 1.75;
-            font-size: 1.02rem;
-        }}
-
-        .metric-card {{
-            min-height: 112px;
-            border: 1px solid var(--line);
-            border-radius: var(--radius);
-            background: var(--panel-strong);
-            box-shadow: 0 12px 32px rgba(34, 42, 46, 0.10);
-            padding: 0.95rem;
-        }}
-
-        .metric-label {{
-            color: var(--muted);
-            font-size: 0.84rem;
-            font-weight: 750;
-        }}
-
-        .metric-value {{
-            margin-top: 0.24rem;
-            font-size: 1.82rem;
-            line-height: 1.1;
-            font-weight: 900;
-            color: var(--text);
-        }}
-
-        .metric-note {{
-            margin-top: 0.28rem;
-            color: var(--muted);
-            font-size: 0.78rem;
-        }}
-
-        .article-card {{
-            border: 1px solid var(--line);
-            border-radius: var(--radius);
-            background: var(--panel-strong);
-            box-shadow: 0 12px 34px rgba(34, 42, 46, 0.09);
-            padding: 0.95rem 1rem;
-            margin: 0.75rem 0;
-        }}
-
-        .article-title {{
-            margin: 0.35rem 0 0.4rem;
-            font-size: 1.08rem;
-            line-height: 1.4;
-            font-weight: 850;
-            color: var(--text);
-        }}
-
-        .article-abstract {{
-            color: #4f5a60;
-            line-height: 1.65;
-            margin: 0.35rem 0 0.7rem;
-        }}
-
-        .reason-box {{
-            border-left: 3px solid var(--accent-2);
-            background: rgba(24, 119, 127, 0.08);
-            border-radius: 0 var(--radius) var(--radius) 0;
-            padding: 0.6rem 0.72rem;
-            color: #32464a;
-            line-height: 1.6;
-        }}
-
-        .pill {{
-            display: inline-flex;
-            align-items: center;
-            gap: 0.25rem;
-            margin: 0 0.35rem 0.35rem 0;
-            padding: 0.22rem 0.58rem;
-            border-radius: 999px;
-            border: 1px solid rgba(32, 39, 44, 0.10);
-            background: rgba(246, 241, 236, 0.88);
-            color: #435055;
-            font-size: 0.78rem;
-            font-weight: 760;
-        }}
-
-        .pill.accent {{
-            background: rgba(159, 63, 95, 0.10);
-            color: #82324f;
-        }}
-
-        .pill.teal {{
-            background: rgba(24, 119, 127, 0.10);
-            color: #17686f;
-        }}
-
-        .section-note {{
-            color: var(--muted);
-            line-height: 1.7;
-            margin: -0.15rem 0 0.85rem;
-        }}
-
-        .trace-step {{
-            border: 1px solid var(--line);
-            border-radius: var(--radius);
-            background: rgba(255, 255, 255, 0.78);
-            padding: 0.65rem 0.75rem;
-            margin: 0.5rem 0;
-        }}
-
-        .trace-agent {{
-            font-weight: 850;
-            color: var(--accent-2);
-        }}
-
-        div[data-testid="stVerticalBlockBorderWrapper"] {{
-            border-radius: var(--radius);
-            border-color: var(--line);
-            background: var(--panel);
-            box-shadow: 0 10px 34px rgba(34, 42, 46, 0.08);
-            backdrop-filter: blur(16px);
-        }}
-
-        div.stButton > button,
-        div.stDownloadButton > button,
-        div.stLinkButton > a {{
-            min-height: 2.5rem;
-            border-radius: var(--radius);
-            border: 1px solid rgba(32, 39, 44, 0.14);
-            background: rgba(255, 255, 255, 0.86);
-            color: var(--text);
-            font-weight: 760;
-            transition: transform 160ms ease, border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
-        }}
-
-        div.stButton > button:hover,
-        div.stDownloadButton > button:hover,
-        div.stLinkButton > a:hover {{
-            transform: translateY(-1px);
-            border-color: rgba(24, 119, 127, 0.34);
-            background: #ffffff;
-            box-shadow: 0 8px 22px rgba(34, 42, 46, 0.10);
-            color: var(--accent-2);
-        }}
-
-        div.stButton > button[kind="primary"] {{
-            border-color: transparent;
-            background: linear-gradient(135deg, #1d777f, #9f3f5f);
-            color: white;
-        }}
-
-        [data-testid="stTextInput"] input,
-        [data-testid="stTextArea"] textarea,
-        [data-testid="stSelectbox"] div,
-        [data-testid="stNumberInput"] input {{
-            border-radius: var(--radius);
-        }}
-
-        .stTabs [data-baseweb="tab-list"] {{
-            gap: 0.35rem;
-        }}
-
-        .stTabs [data-baseweb="tab"] {{
-            border-radius: var(--radius);
-            padding: 0.45rem 0.75rem;
-            background: rgba(255, 255, 255, 0.62);
-        }}
-
-        @media (max-width: 760px) {{
-            .block-container {{
-                padding: 0.9rem 0.9rem 2rem;
-            }}
-            .auth-title {{
-                font-size: 2.25rem;
-            }}
-            .metric-card {{
-                min-height: 96px;
-            }}
-        }}
-        </style>
+        <style>{css}</style>
         """,
         unsafe_allow_html=True,
     )
@@ -563,22 +234,28 @@ def article_card(item: dict[str, Any], prefix: str, show_feedback: bool = True) 
 
 
 def show_auth_page() -> None:
-    st.markdown('<div class="auth-wrap"><div>', unsafe_allow_html=True)
-    st.markdown(
-        """
-        <div class="auth-hero">
-          <span class="auth-badge">NewsRec-RAG Agent</span>
-          <div class="auth-title">智能新闻推荐实验平台</div>
-          <p class="auth-copy">
-            面向新闻推荐系统研究：多策略推荐、离线评估、本地资料库 RAG、引用溯源和多 Agent 运行观测。
-          </p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    left, right = st.columns([1.15, 0.95], gap="large")
+    with left:
+        st.markdown(
+            """
+            <section class="auth-hero auth-surface">
+              <span class="auth-badge">系统概览</span>
+              <div class="auth-title">像原生 iOS 一样安静、清晰、克制。</div>
+              <p class="auth-copy">
+                这里不是做花哨演示，而是把推荐、RAG、评估和多 Agent 观察收进统一的系统界面。
+                信息层级更轻，交互更像设置页和内容页的结合。
+              </p>
+              <div class="auth-pills">
+                <span class="pill accent">系统仪表盘</span>
+                <span class="pill teal">本地 RAG</span>
+                <span class="pill">Multi-Agent Trace</span>
+              </div>
+            </section>
+            """,
+            unsafe_allow_html=True,
+        )
 
-    left, center, right = st.columns([1.1, 1, 1.1])
-    with center:
+    with right:
         with st.container(border=True):
             st.subheader("登录 / 注册")
             st.caption(f"演示账号：{DEFAULT_USER} / {DEFAULT_PASSWORD}")
@@ -604,7 +281,6 @@ def show_auth_page() -> None:
                         {"username": new_username, "password": new_password, "display_name": display_name or None},
                     )
                     st.success("注册成功，请切换到登录页进入系统。")
-    st.markdown("</div></div>", unsafe_allow_html=True)
 
 
 def sidebar() -> int:
@@ -629,7 +305,18 @@ def sidebar() -> int:
     ]
     user = st.session_state.user or {}
     with st.sidebar:
-        st.markdown("### NewsRec-RAG")
+        st.markdown(
+            """
+            <div class="sidebar-brand">
+              <div class="sidebar-mark">N</div>
+              <div>
+                <div class="sidebar-title">NewsRec-RAG</div>
+                <div class="sidebar-subtitle">iOS-style native shell</div>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
         st.caption("Agentic RAG 新闻推荐平台")
         st.divider()
         st.markdown("**当前用户**")
